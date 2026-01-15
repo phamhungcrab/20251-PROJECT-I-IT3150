@@ -1,116 +1,116 @@
-# Malware Multiclass Classification (Windows PE) — Colab-ready
+# Phân loại đa lớp mã độc Windows PE (LightGBM)
 
-Dự án này được thiết kế để:
-- Đọc 4 feature sets (DLLs, APIs, PE Header, PE Section)
-- Align theo `sha256` (intersection) để tránh mismatch
-- Build `X` dạng **sparse CSR** (tối ưu RAM)
-- Split **train/val/test stratified** (KHÔNG leakage)
-- Train mô hình:
-  - Logistic Regression (ElasticNet) — baseline mạnh cho sparse high-dim
-  - LightGBM (tuỳ chọn) — thường cho accuracy cao hơn
-- In/log rất nhiều thông tin để debug + tối ưu
+Dự án này tập trung vào bài toán phân loại malware đa lớp từ đặc trưng tĩnh của file Windows PE. Pipeline ưu tiên tính tái lập, tránh leakage, và tối ưu hiệu năng trên dữ liệu sparse.
 
-## 1) Cấu trúc thư mục đề xuất
+## Tổng quan
+
+- 4 nhóm đặc trưng: DLLs, APIs, PE Header, PE Section.
+- Align theo `sha256` để tránh lệch mẫu.
+- Build ma trận đặc trưng dạng CSR (sparse) để giảm RAM.
+- Chia train/val/test theo stratified; **không dùng test khi chọn tham số**.
+- Mô hình:
+  - Logistic Regression (tùy chọn).
+  - LightGBM (mặc định, hiệu quả tốt).
+- Explainability:
+  - Feature importance tổng thể.
+  - SHAP per-class (nếu cài `shap`).
+
+## Nguồn dữ liệu
+
+Kaggle dataset: **Windows Malwares** (Joakim Arvidsson), gồm 4 file CSV:
+`DLLs_Imported.csv`, `API_Functions.csv`, `PE_Header.csv`, `PE_Section.csv`.  
+License: **CC BY 4.0**.
+
+## Cấu trúc thư mục dữ liệu
 
 ```
-/content/drive/MyDrive/malware/
+data_dir/
   DLLs_Imported.csv
   API_Functions.csv
   PE_Header.csv
   PE_Section.csv
 
-  cache/                     # parquet cache tự tạo (tuỳ chọn)
-  processed/                 # sparse dataset cache tự tạo (X_all.npz, y_all.npy, ...)
+  cache/        # (tùy chọn) cache parquet
+  processed/    # cache sparse: X_all.npz, y_all.npy, sha256_all.npy, feature_names.json
   outputs/
     logs/
     models/
     reports/
 ```
 
-## 2) Chạy trên Google Colab
+> `data_dir` mặc định cấu hình trong `malware_multiclass_project/src/config.py`.  
+> Trên Colab có thể là `/content/drive/MyDrive/malware`.
 
-Trong Colab:
+## Cài đặt
 
-```python
-from google.colab import drive
-drive.mount('/content/drive')
-```
-
-(Optional) cài LightGBM + Optuna:
+Tạo môi trường ảo (Windows):
 
 ```bash
-pip -q install lightgbm optuna
+py -3.12 -m venv venv
+venv\Scripts\activate
 ```
 
-Chạy train:
+Cài đặt thư viện:
 
 ```bash
-python run_colab.py
+pip install -r requirements.txt
 ```
 
-## 3) Anti-leakage
+Các gói cần thêm cho pipeline chính:
 
-- Split dựa trên `y` (stratify) và index sample.
-- Có check **sha256 overlap** giữa train/val/test → nếu overlap thì assert fail.
-- Tuning chỉ dùng validation, test giữ nguyên đến cuối.
+```bash
+pip install lightgbm
+```
 
-## 4) Output
+(Tuỳ chọn) Explainability per-class:
+
+```bash
+pip install shap
+```
+
+## Chạy training
+
+Local:
+
+```bash
+python -m malware_multiclass_project.src.train
+```
+
+Colab:
+
+```bash
+python malware_multiclass_project/run_colab.py
+```
+
+## Cấu hình nhanh
+
+Sửa trong `malware_multiclass_project/src/config.py`:
+
+- `data_dir`, `cache_dir`, `out_dir`
+- `use_logreg` (False nếu chỉ dùng LightGBM)
+- `lgbm_*` (tham số LightGBM)
+- `lgbm_tune = False` (không dùng Optuna)
+- `use_refine_pair = False` (mặc định tắt)
+- `use_calibration = False` (mặc định tắt)
+
+## Output
 
 - `outputs/models/model_<name>_<run_id>.joblib`
 - `outputs/reports/metrics_<name>_<run_id>.json`
 - `outputs/logs/train_<run_id>.log`
-- Explainability:
-  - Logistic: `top_features_logreg_<run_id>.json`
-  - LightGBM: `feature_importance_lgbm_<run_id>.json`
+- `outputs/reports/feature_importance_lgbm_<run_id>.json`
+- `outputs/reports/shap_importance_lgbm_<run_id>.json` (nếu cài `shap`)
 
+## Anti-leakage & tái lập
 
+- Split theo stratified và kiểm tra trùng `sha256` giữa các tập.
+- `random_state` cố định trong config để tái lập kết quả.
 
+## Thông tin sinh viên
 
-
-Help:
-
-1️⃣. Tạo môi trường ảo Python
----------------------------------------------------------------
-py -3.12 -m venv venv
-venv\Scripts\activate.bat       (Windows)
-.\venv\Scripts\activate
-source venv/bin/activate    (Linux/Mac)
-
-2️⃣. Cài đặt thư viện cần thiết
----------------------------------------------------------------
-pip install -r requirements.txt
-
-python -m nltk.downloader stopwords punkt wordnet omw-1.4
-
-pip install pyvi
-
-python -m nltk.downloader punkt punkt_tab
-
-pip install google-generativeai
-
-pip install python-dotenv
-
-pip install matplotlib
-
-pip install scikit-learn
-
-pip install shap
-
-pip install pandas pyarrow
-
-pip install duckdb
----------------------------------------------------------------
-
-👤 Thông tin sinh viên
-
-Họ và tên: Phạm Ngọc Hưng
-
-MSSV: 20235342
-
-🏫 Trường: Đại học Bách khoa Hà Nội (HUST)
-
-📘 Môn học: Project I – IT3150
-
-👨‍🏫 Giảng viên hướng dẫn: Thầy Hoàng Việt Dũng
-
-🛡️ Chủ đề: Nhận biết cơ bản về mã độc (malware)
+- Họ và tên: Phạm Ngọc Hồng
+- MSSV: 20235342
+- Trường: Đại học Bách khoa Hà Nội (HUST)
+- Môn học: Project I – IT3150
+- Giảng viên hướng dẫn: Thầy Hoàng Việt Dũng
+- Chủ đề: Nhận biết cơ bản về mã độc (malware)
